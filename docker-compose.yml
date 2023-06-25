@@ -1,0 +1,68 @@
+version: "3.8"
+
+networks:
+  int:
+    name: quay-int
+
+services:
+
+  quay:
+    container_name: quay
+    image: quay.io/projectquay/quay:3.8.9
+    privileged: true
+    user: nobody:0
+    environment:
+      WORKER_COUNT_UNSUPPORTED_MINIMUM: "1"
+      WORKER_COUNT: "2"
+    volumes:
+      - "./quay-conf:/quay-registry/conf/stack"
+      - "./quay-data:/datastorage/registry"
+    networks:
+      - int
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    depends_on:
+      - quay-pgsql
+      - quay-redis
+
+  quay-pgsql:
+    container_name: quay-pgsql
+    image: docker.io/library/postgres:15.3-bookworm
+    environment:
+      POSTGRES_PASSWORD: "gJ3Wwc3LpCZ"
+    volumes:
+      - "./pgsql-data:/var/lib/postgresql/data"
+      - "./pgsql-init/init.sql:/docker-entrypoint-initdb.d/init.sql"
+    networks:
+      - int
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quay -d quay"]
+      interval: 10s
+      timeout: 9s
+      retries: 3
+      start_period: 10s
+
+  quay-redis:
+    container_name: quay-redis
+    image: docker.io/library/redis:7.0.11-bookworm
+    command: [ "redis-server", "/data/redis.conf" ]
+    volumes:
+      - "./redis-data:/data"
+    networks:
+      - int
+
+  quay-clair:
+    user: nobody
+    container_name: quay-clair
+    image: quay.io/projectquay/clair:4.6.1
+    environment:
+      CLAIR_CONF: "/clair/config.yml"
+      CLAIR_MODE: "combo"
+    volumes:
+      - "./clair-conf:/clair"
+    networks:
+      - int
+    depends_on:
+      - quay
+      - quay-pgsql
